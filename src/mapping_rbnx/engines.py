@@ -187,26 +187,6 @@ def _call_service(node, srv_type, name: str, request, timeout_s: float):
         return False, f"service {name} raised {e}"
 
 
-def _get_remote_parameter(node, node_name: str, name: str, timeout_s: float):
-    """Read one string parameter off another node, or None if it cannot be read.
-
-    slam_toolbox's `mode` is fixed when its executable is chosen, and it decides
-    which deserialize request the node will accept, so the caller has to ask
-    rather than assume.
-    """
-    try:
-        from rcl_interfaces.srv import GetParameters
-    except Exception:  # noqa: BLE001
-        return None
-    req = GetParameters.Request()
-    req.names = [name]
-    ok, resp = _call_service(node, GetParameters, f"{node_name}/get_parameters", req, timeout_s)
-    if not ok or not getattr(resp, "values", None):
-        return None
-    value = resp.values[0]
-    return value.string_value or None
-
-
 def _pgm_shape(path: str):
     """(width, height) from a binary PGM header, or None if it is not one."""
     try:
@@ -349,70 +329,32 @@ class SlamToolboxOps:
                  pose: Optional[tuple[float, float, float]] = None) -> tuple[bool, str]:
         """Put the saved graph back and stand the robot in it at `pose`.
 
-        Three things about `deserialize_map` are not visible in its signature.
-        It answers with an empty message, so an accepted request and a refused
-        one look identical over the wire; the map the engine publishes
-        afterwards is the only evidence, which is what this waits for. Its
-        LOCALIZE_AT_POSE match type is refused outright by a node running in
-        mapping mode -- the mode is fixed by which slam_toolbox executable was
-        launched -- so the request that loads a map there is START_AT_GIVEN_POSE.
-        And it keeps consuming scans while it loads, so a caller that has not
-        held the engine first sees the freshly loaded map immediately grow from
-        whatever pose the robot was believed to be at -- the result is one map
-        that is neither the saved one nor the live one. `hold` before this.
+        A saved map is loaded into a fresh localization node, never into the
+        running mapping node. `deserialize_map` on the asynchronous mapping
+        node merges the saved graph with the session in memory, clears any
+        pause, and folds new scans in from wherever the match type placed the
+        robot (the graph's first node when no pose is given), so the grid it
+        publishes grows past the saved one within a second or two, and whether
+        a reader saw the saved grid or the grown one was a race. The
+        localization node holds only the saved graph, does not add to it, and
+        is the only publisher of `/map` and `map -> odom` while it runs, which
+        is what `load_map` promises.
         """
-        try:
-            from slam_toolbox.srv import DeserializePoseGraph
-        except Exception as e:  # noqa: BLE001
-            return False, f"slam_toolbox service types unavailable: {e}"
         ready, detail = self.graph_ready(map_dir)
         if not ready:
             return False, detail
-
         topic = os.environ.get("MAPPING_OCCUPANCY_TOPIC", "/map")
         want = _pgm_shape(os.path.join(map_dir, "occupancy.pgm"))
-        _, before, before_stamp = _await_map_shape(node, topic, None, 2.0)
-
-        mode = _get_remote_parameter(node, self._ns, "mode", 5.0)
-        if mode == "localization":
-            # The localization node refuses every other match type ("non-
-            # localization deserialization in localization mode"), and its
-            # LOCALIZE_AT_POSE searches near the map it already holds. Another
-            # map is a node started on that map.
-            ok, detail = self._start_localization_node(map_dir, map_id, pose)
-            if not ok:
-                return False, detail
-            loaded, shape, _ = _await_map_shape(node, topic, want, min(timeout_s, 60.0),
-                                                newer_than=before_stamp)
-            if not loaded:
-                return False, (f"the localization node started on {map_id} published "
-                               f"{shape}, not the saved {want}")
-            return True, detail
-        req = DeserializePoseGraph.Request()
-        req.filename = os.path.join(map_dir, SLAM_TOOLBOX_STEM)
-        if pose is None:
-            req.match_type = DeserializePoseGraph.Request.START_AT_FIRST_NODE
-            placed = "first node"
-        else:
-            req.match_type = DeserializePoseGraph.Request.START_AT_GIVEN_POSE
-            placed = "given pose"
-        if pose is not None:
-            req.initial_pose.x, req.initial_pose.y, req.initial_pose.theta = (
-                float(pose[0]), float(pose[1]), float(pose[2]))
-        ok, resp = _call_service(node, DeserializePoseGraph, self._srv("deserialize_map"), req, timeout_s)
+        _, _, before_stamp = _await_map_shape(node, topic, None, 2.0)
+        ok, detail = self._start_localization_node(map_dir, map_id, pose)
         if not ok:
-            return False, str(resp)
-
-        # The saved map may be the size of the live one (a reload, or a session
-        # that has barely moved), so "a newer grid" is the evidence, not size.
-        loaded, shape, _ = _await_map_shape(node, topic, want, min(timeout_s, 30.0),
+            return False, detail
+        loaded, shape, _ = _await_map_shape(node, topic, want, min(timeout_s, 60.0),
                                             newer_than=before_stamp)
         if not loaded:
-            return False, (f"deserialize_map accepted {req.filename} but the map "
-                           f"{'stayed at ' + str(before) if shape is None else 'came back ' + str(shape)}, "
-                           f"not the saved {want} -- slam_toolbox refused the request "
-                           f"(mode={mode or 'unknown'}, match_type={req.match_type})")
-        return True, f"loaded {req.filename} at its {placed}, {shape[0]}x{shape[1]} cells"
+            return False, (f"the localization node started on {map_id} published "
+                           f"{shape}, not the saved {want}")
+        return True, detail
 
     def freeze(self, node, timeout_s: float) -> tuple[bool, str]:
         """Stop the engine editing its graph, and check that it stopped.
