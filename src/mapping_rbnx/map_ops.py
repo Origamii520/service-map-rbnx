@@ -703,10 +703,15 @@ def load_map_impl(map_id: str, mode: str = "localization",
             # Engine-owned restore: slam_toolbox deserializes its pose graph and
             # continues from it. The localizer branch above already returned when
             # a particle filter is configured, so this is the bare-engine path.
+            # Without a given pose the robot is stood where the engine has it
+            # now, not at the graph's origin: the node keeps adding the live
+            # scans, and placed at the origin it drew them in the wrong place
+            # and grew the saved map. Right after a save the two frames are
+            # the same; for an older map this is still the better guess.
+            pose = (x, y, theta) if has_initial_pose else live_pose(node)
             ok_e, detail_e = ops.activate(
                 node, map_dir, map_id,
-                float(os.environ.get("MAPPING_LOAD_DATABASE_TIMEOUT_S", "180")),
-                (x, y, theta) if has_initial_pose else None)
+                float(os.environ.get("MAPPING_LOAD_DATABASE_TIMEOUT_S", "180")), pose)
             if not ok_e:
                 return {"ok": False, "detail": f"{algo} failed to load {map_id!r}: {detail_e}"}
             lifecycle.set_mode(mode)
