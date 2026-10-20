@@ -1262,14 +1262,35 @@ def _save_map_via_engine(map_id: str, map_dir: str, algo: str, note: str = "") -
     try:
         staging_dir = _staging_dir(map_id)
         timeout_s = float(os.environ.get("MAPPING_SAVE_BACKUP_TIMEOUT_S", "180"))
-        ok, detail = ops.snapshot(node, staging_dir, timeout_s)
-        if not ok:
-            return {"ok": False, "map_id": map_id, "artifact_path": "",
-                    "detail": f"{algo} could not serialize its map: {detail}"}
-        if not _run_preview_snapshot(staging_dir):
-            return {"ok": False, "map_id": map_id, "artifact_path": "",
-                    "detail": "map preview/occupancy snapshot was not produced; "
-                              "refusing to publish an incomplete spatial artifact"}
+        state = lifecycle.current()
+        loaded = os.path.join(MAPS_DIR, state.get("map_id") or "")
+        if (state.get("mode") == "localization" and state.get("map_id")
+                and ops.graph_ready(loaded)[0]):
+            # A localization node does not change the map it holds, so the
+            # session is the loaded artifact: copy it, graph and preview alike.
+            shutil.copytree(loaded, staging_dir, dirs_exist_ok=True)
+            detail = f"copied the loaded map {state['map_id']!r}"
+        else:
+            # The graph and the grid must be one state. Taken from a running
+            # engine they were not: the grid lags the graph and both kept
+            # growing between the two captures, so a reload rendered a larger
+            # map than the saved preview. Hold the engine until its grid stops
+            # changing, take both, then let it map again.
+            held, held_detail = ops.freeze(node, 10.0)
+            if not held:
+                log.warning("save_map[%s]: %s; saving from a moving engine", map_id, held_detail)
+            try:
+                ok, detail = ops.snapshot(node, staging_dir, timeout_s)
+                if not ok:
+                    return {"ok": False, "map_id": map_id, "artifact_path": "",
+                            "detail": f"{algo} could not serialize its map: {detail}"}
+                if not _run_preview_snapshot(staging_dir):
+                    return {"ok": False, "map_id": map_id, "artifact_path": "",
+                            "detail": "map preview/occupancy snapshot was not produced; "
+                                      "refusing to publish an incomplete spatial artifact"}
+            finally:
+                if held:
+                    ops.resume(node, 10.0)
         _write_meta_fields(staging_dir, {"map_id": map_id, "engine": algo,
                                          "note": note or "-"})
         if not os.path.isfile(os.path.join(staging_dir, "occupancy.png")):
