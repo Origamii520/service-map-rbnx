@@ -264,8 +264,8 @@ class _Grid:
         self.origin = origin
 
     def _index(self, x: float, y: float):
-        col = int((x - self.origin[0]) / self.resolution)
-        row = int((y - self.origin[1]) / self.resolution)
+        col = math.floor((x - self.origin[0]) / self.resolution)
+        row = math.floor((y - self.origin[1]) / self.resolution)
         if 0 <= col < self.width and 0 <= row < self.height:
             return row * self.width + col
         return None
@@ -275,8 +275,8 @@ class _Grid:
         return i is not None and bool(self.known[i])
 
     def occupied_near(self, x: float, y: float, tolerance_cells: int) -> bool:
-        col = int((x - self.origin[0]) / self.resolution)
-        row = int((y - self.origin[1]) / self.resolution)
+        col = math.floor((x - self.origin[0]) / self.resolution)
+        row = math.floor((y - self.origin[1]) / self.resolution)
         if not (0 <= col < self.width and 0 <= row < self.height):
             return False
         for dr in range(-tolerance_cells, tolerance_cells + 1):

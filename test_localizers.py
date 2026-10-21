@@ -623,7 +623,9 @@ class ScanFitEvidenceTests(unittest.TestCase):
                                              (1.0, 0.15, -1.5708))
         self.assertEqual(fit, -1.0, detail)
         self.assertIn("too little of the scan", detail)
-        self.assertIn("25 of 200", detail)
+        # Six formerly counted beams ended just below y=0. They must stay
+        # outside instead of truncating to row zero.
+        self.assertIn("19 of 200", detail)
 
     def test_the_floor_is_a_share_of_the_scan_not_a_count(self):
         from mapping_rbnx import localizers
