@@ -149,8 +149,10 @@ def _score(grid, field, known, ranges, angles, xs, ys, yaws,
     sin = np.sin(yaws[:, None] + angles[None, :])
     ex = lx + ranges[None, :] * cos
     ey = ly + ranges[None, :] * sin
-    col = ((ex - grid.origin[0]) / grid.resolution).astype(np.int32)
-    row = ((ey - grid.origin[1]) / grid.resolution).astype(np.int32)
+    # Truncating a negative fraction toward zero silently maps a beam just
+    # beyond the lower/left boundary onto the first cell.
+    col = np.floor((ex - grid.origin[0]) / grid.resolution).astype(np.int32)
+    row = np.floor((ey - grid.origin[1]) / grid.resolution).astype(np.int32)
     inside = (col >= 0) & (col < grid.width) & (row >= 0) & (row < grid.height)
     col = np.clip(col, 0, grid.width - 1)
     row = np.clip(row, 0, grid.height - 1)
@@ -200,6 +202,22 @@ def _top_distinct_candidates(refined, limit: int):
             break
 
     return kept
+
+
+def _allowed_positions(grid, standable, xs, ys):
+    """Keep the coarse search's existing domain during refinement as well."""
+    import numpy as np
+
+    col = (np.asarray(xs, dtype=np.float64) - grid.origin[0]) / grid.resolution
+    row = (np.asarray(ys, dtype=np.float64) - grid.origin[1]) / grid.resolution
+    inside = (np.isfinite(col) & np.isfinite(row) &
+              (col >= 0) & (col < grid.width) & (row >= 0) & (row < grid.height))
+    indices = np.flatnonzero(inside)
+    allowed = np.zeros(xs.shape, dtype=bool)
+    allowed[indices] = standable[np.floor(row[indices]).astype(np.intp),
+                                 np.floor(col[indices]).astype(np.intp)]
+    return xs[allowed], ys[allowed]
+
 
 def global_scan_match(grid, msg, tolerance_cells: int = 3,
                      sensor_xy: tuple = (0.0, 0.0)) -> Optional[Match]:
@@ -258,12 +276,17 @@ def global_scan_match(grid, msg, tolerance_cells: int = 3,
     for _, cx, cy, cyaw in best:
         gx, gy = np.meshgrid(offs + cx, offs + cy)
         gx, gy = gx.ravel(), gy.ravel()
+        gx, gy = _allowed_positions(grid, standable, gx, gy)
+        if not len(gx):
+            continue
         for dy in dyaws:
             s, _ = _score(grid, field, known, ranges, angles, gx, gy,
                           np.full(len(gx), cyaw + dy, dtype=np.float32), sensor_xy)
             i = int(np.argmax(s))
             refined.append((float(s[i]), float(gx[i]), float(gy[i]), float(cyaw + dy)))
     refined.sort(reverse=True)
+    if not refined:
+        return None
 
     # Pick the best distinct fine hypotheses first. Unlike the original
     # matcher, polish every Top-K hypothesis instead of polishing only the
@@ -284,8 +307,11 @@ def global_scan_match(grid, msg, tolerance_cells: int = 3,
 
         gx, gy = np.meshgrid(polish + px0, polish + py0)
         gx, gy = gx.ravel(), gy.ravel()
+        gx, gy = _allowed_positions(grid, standable, gx, gy)
 
         for dy in pyaws:
+            if not len(gx):
+                break
             sc, _ = _score(grid, field, known, ranges, angles, gx, gy,
                            np.full(len(gx), pyaw0 + dy, dtype=np.float32), sensor_xy)
             i = int(np.argmax(sc))
