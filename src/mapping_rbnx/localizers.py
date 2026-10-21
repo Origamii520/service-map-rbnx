@@ -83,16 +83,33 @@ def stop() -> None:
     """Stop the localization stack if it is running. Safe to call when it is not."""
     global _PROC, _ACTIVE_MAP
     proc, _PROC, _ACTIVE_MAP = _PROC, None, ""
-    if proc is None or proc.poll() is not None:
+    if proc is None:
         return
+    # start_new_session=True makes the launcher's PID our process-group ID.
+    # ros2 launch can exit before an unresponsive lifecycle-manager child;
+    # looking up the exited leader's PGID or returning on poll() leaks it.
+    def signal_group(sig):
+        """Signal the session we created, even after its leader has exited."""
+        try:
+            os.killpg(proc.pid, sig)
+            return True
+        except ProcessLookupError:
+            return False
     try:
-        os.killpg(os.getpgid(proc.pid), signal.SIGINT)
+        if not signal_group(signal.SIGINT):
+            proc.poll()
+            return
         for _ in range(50):
             if proc.poll() is not None:
                 break
             time.sleep(0.1)
-        if proc.poll() is None:
-            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+        if signal_group(signal.SIGTERM):
+            deadline = time.monotonic() + 2.0
+            while time.monotonic() < deadline and signal_group(0):
+                proc.poll()
+                time.sleep(.05)
+            signal_group(signal.SIGKILL)
+        proc.wait(timeout=2.0)
     except Exception as e:  # noqa: BLE001
         log.warning("stopping localizer failed: %s", e)
 
