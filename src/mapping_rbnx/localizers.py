@@ -155,13 +155,16 @@ def wait_ready(node, timeout_s: float = 30.0) -> tuple[bool, str]:
     except Exception as e:  # noqa: BLE001
         return False, f"std_srvs unavailable: {e}"
     client = node.create_client(Empty, "/reinitialize_global_localization")
-    deadline = time.monotonic() + timeout_s
-    while time.monotonic() < deadline:
-        if client.wait_for_service(timeout_sec=1.0):
-            return True, "localizer ready"
-        if _PROC is not None and _PROC.poll() is not None:
-            return False, f"localizer exited with code {_PROC.returncode} before becoming ready"
-    return False, f"localizer did not expose /reinitialize_global_localization within {timeout_s:.0f}s"
+    try:
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            if client.wait_for_service(timeout_sec=1.0):
+                return True, "localizer ready"
+            if _PROC is not None and _PROC.poll() is not None:
+                return False, f"localizer exited with code {_PROC.returncode} before becoming ready"
+        return False, f"localizer did not expose /reinitialize_global_localization within {timeout_s:.0f}s"
+    finally:
+        node.destroy_client(client)
 
 
 def global_localize(node, timeout_s: float = 15.0) -> tuple[bool, str]:
@@ -176,15 +179,23 @@ def global_localize(node, timeout_s: float = 15.0) -> tuple[bool, str]:
     except Exception as e:  # noqa: BLE001
         return False, f"std_srvs unavailable: {e}"
     client = node.create_client(Empty, "/reinitialize_global_localization")
-    if not client.wait_for_service(timeout_sec=min(timeout_s, 10.0)):
-        return False, "/reinitialize_global_localization unavailable (localizer not running?)"
-    future = client.call_async(Empty.Request())
-    deadline = time.monotonic() + timeout_s
-    while not future.done() and time.monotonic() < deadline:
-        time.sleep(0.05)
-    if not future.done():
-        return False, f"global localization request timed out after {timeout_s:.0f}s"
-    return True, "global localization requested (particles scattered over the map)"
+    try:
+        if not client.wait_for_service(timeout_sec=min(timeout_s, 10.0)):
+            return False, "/reinitialize_global_localization unavailable (localizer not running?)"
+        future = client.call_async(Empty.Request())
+        deadline = time.monotonic() + timeout_s
+        while not future.done() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        if not future.done():
+            future.cancel()
+            return False, f"global localization request timed out after {timeout_s:.0f}s"
+        try:
+            future.result()
+        except Exception as exc:  # noqa: BLE001
+            return False, f"global localization request failed: {exc}"
+        return True, "global localization requested (particles scattered over the map)"
+    finally:
+        node.destroy_client(client)
 
 
 # ── convergence, as the operator sees it ─────────────────────────────────────

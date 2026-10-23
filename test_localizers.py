@@ -6,14 +6,67 @@ stack, the global-localization service call) are exercised in the Webots
 benchmark, not in unit tests.
 """
 import os
+from concurrent.futures import Future
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
 from mapping_rbnx import localizers  # noqa: E402
+
+
+class LocalizerClientTests(unittest.TestCase):
+    def setUp(self):
+        empty = SimpleNamespace(Request=lambda: object())
+        modules = {'std_srvs': SimpleNamespace(), 'std_srvs.srv': SimpleNamespace(Empty=empty)}
+        self.imports = mock.patch.dict(sys.modules, modules)
+        self.imports.start()
+        self.addCleanup(self.imports.stop)
+        self.node = mock.Mock()
+        self.client = self.node.create_client.return_value
+
+    def test_readiness_releases_client_on_all_exit_paths(self):
+        for state in ('ready', 'expired', 'exited', 'error'):
+            with self.subTest(state=state):
+                self.node.reset_mock()
+                self.client.wait_for_service.side_effect = RuntimeError('discovery failed') if state == 'error' else None
+                self.client.wait_for_service.return_value = state == 'ready'
+                proc = SimpleNamespace(poll=lambda: 1, returncode=1) if state == 'exited' else None
+                with mock.patch.object(localizers, '_PROC', proc):
+                    if state == 'error':
+                        with self.assertRaisesRegex(RuntimeError, 'discovery failed'):
+                            localizers.wait_ready(self.node)
+                    else:
+                        ok, _ = localizers.wait_ready(self.node, timeout_s=0 if state == 'expired' else 1)
+                        self.assertEqual(ok, state == 'ready')
+                self.node.destroy_client.assert_called_once_with(self.client)
+
+    def test_scatter_releases_client_and_reports_response_failures(self):
+        for state in ('success', 'unavailable', 'pending', 'failed', 'error'):
+            with self.subTest(state=state):
+                self.node.reset_mock()
+                self.client.wait_for_service.return_value = state != 'unavailable'
+                future = Future()
+                if state == 'success':
+                    future.set_result(object())
+                elif state == 'failed':
+                    future.set_exception(RuntimeError('response failed'))
+                self.client.call_async.return_value = future
+                self.client.call_async.side_effect = RuntimeError('request failed') if state == 'error' else None
+                if state == 'error':
+                    with self.assertRaisesRegex(RuntimeError, 'request failed'):
+                        localizers.global_localize(self.node)
+                else:
+                    ok, detail = localizers.global_localize(self.node, timeout_s=0)
+                    self.assertEqual(ok, state == 'success')
+                    if state == 'failed':
+                        self.assertIn('response failed', detail)
+                    if state == 'pending':
+                        self.assertTrue(future.cancelled())
+                self.node.destroy_client.assert_called_once_with(self.client)
 
 
 class LocalizerConfigTests(unittest.TestCase):
