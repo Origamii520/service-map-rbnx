@@ -452,15 +452,12 @@ def sensor_offset_xy(node=None, laser_frame: str = "", base_frame: str = "") -> 
             log.warning("%s=%r is not 'x y'; ignoring", SENSOR_OFFSET_ENV, raw)
     frame = laser_frame or os.environ.get("MAPPING_LASER_FRAME", "")
     base = base_frame or os.environ.get("MAPPING_BASE_FRAME", "base_link")
+    if frame and frame == base:
+        return (0.0, 0.0)
     if node is not None and frame:
         try:
-            import tf2_ros
-            from rclpy.duration import Duration
-            buf = tf2_ros.Buffer()
-            tf2_ros.TransformListener(buf, node, spin_thread=True)
-            import rclpy.time
-            tr = buf.lookup_transform(base, frame, rclpy.time.Time(),
-                                      timeout=Duration(seconds=3.0)).transform.translation
+            from mapping_rbnx.tf_lookup import lookup_transform
+            tr = lookup_transform(node, base, frame, 3.0).transform.translation
             _sensor_offset = (float(tr.x), float(tr.y))
             log.info("laser sits at (%.3f, %.3f) in %s", tr.x, tr.y, base)
             return _sensor_offset

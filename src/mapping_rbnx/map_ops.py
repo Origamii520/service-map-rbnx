@@ -435,30 +435,15 @@ def _confirm_engine_pose(node, grid) -> tuple[bool, str]:
 def live_pose(node, timeout_s: float = 5.0):
     """The engine's own current pose in the map frame, from tf."""
     try:
-        import tf2_ros
-        from rclpy.duration import Duration
-        from rclpy.time import Time
+        from mapping_rbnx.tf_lookup import lookup_transform
+        base = os.environ.get("MAPPING_BASE_FRAME", "base_link")
+        frame = os.environ.get("MAPPING_MAP_FRAME", "map")
+        tf = lookup_transform(node, frame, base, timeout_s)
     except Exception:  # noqa: BLE001
         return None
-    buf = tf2_ros.Buffer()
-    listener = tf2_ros.TransformListener(buf, node, spin_thread=False)
-    deadline = time.monotonic() + timeout_s
-    base = os.environ.get("MAPPING_BASE_FRAME", "base_link")
-    frame = os.environ.get("MAPPING_MAP_FRAME", "map")
-    while time.monotonic() < deadline:
-        try:
-            tf = buf.lookup_transform(frame, base, Time(), Duration(seconds=0.2))
-        except Exception:  # noqa: BLE001
-            time.sleep(0.2)
-            continue
-        finally:
-            pass
-        t, q = tf.transform.translation, tf.transform.rotation
-        del listener
-        return (t.x, t.y, math.atan2(2.0 * (q.w * q.z + q.x * q.y),
-                                     1.0 - 2.0 * (q.y * q.y + q.z * q.z)))
-    del listener
-    return None
+    t, q = tf.transform.translation, tf.transform.rotation
+    return (t.x, t.y, math.atan2(2.0 * (q.w * q.z + q.x * q.y),
+                                1.0 - 2.0 * (q.y * q.y + q.z * q.z)))
 
 
 def _confirm_against_map(node, grid, pose, require_scan: bool = False) -> tuple[bool, str]:
