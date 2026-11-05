@@ -1,0 +1,174 @@
+/* SPDX-License-Identifier: MulanPSL-2.0 */
+*{
+  box-sizing:border-box
+}
+body{
+  margin:0;
+  font:15px system-ui,sans-serif;
+  background:#101723;
+  color:#edf3fb;
+  height:100vh;
+  display:flex;
+  flex-direction:column
+}
+header{
+  padding:16px 24px;
+  border-bottom:1px solid #344157;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:16px
+}
+h1{
+  font-size:20px;
+  margin:0 0 5px
+}
+small,.muted{
+  color:#aabbd0
+}
+main{
+  display:flex;
+  flex:1;
+  min-height:0
+}
+aside{
+  width:268px;
+  padding:0;
+  display:flex;
+  flex-direction:column;
+  border-right:1px solid #344157;
+  overflow:hidden
+}
+.edit-scroll{
+  padding:18px;
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+  flex:1;
+  overflow:auto
+}
+.edit-actions{
+  padding:12px 18px;
+  border-top:1px solid #344157;
+  display:flex;
+  flex-direction:column;
+  gap:8px
+}
+h2{
+  font-size:14px;
+  margin:2px 0 8px;
+  color:#aabbd0;
+  font-weight:500
+}
+.tools{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px
+}
+button,a.action{
+  font:inherit;
+  color:inherit;
+  background:#253248;
+  border:1px solid #435775;
+  border-radius:8px;
+  padding:10px;
+  cursor:pointer;
+  text-decoration:none;
+  text-align:center
+}
+button:hover,a.action:hover{
+  background:#344966
+}
+button.active{
+  border-color:#56d8b3;
+  background:#194e43
+}
+button.primary{
+  background:#257d68;
+  border-color:#54c8a8
+}
+button:disabled{
+  opacity:.45;
+  cursor:wait
+}
+.row{
+  display:flex;
+  gap:8px
+}
+.row>*{
+  flex:1
+}
+input{
+  width:100%;
+  accent-color:#54c8a8
+}
+p{
+  line-height:1.6;
+  margin:0;
+  font-size:13px
+}
+.spacer{
+  flex:1
+}
+.note{
+  padding:12px;
+  border-radius:8px;
+  background:#1c293b
+}
+#viewport{
+  flex:1;
+  overflow:hidden;
+  position:relative;
+  touch-action:none;
+  background-color:#1a2432;
+  background-image:linear-gradient(#253144 1px,transparent 1px),linear-gradient(90deg,#253144 1px,transparent 1px);
+  background-size:24px 24px
+}
+canvas{
+  position:absolute;
+  top:0;
+  left:0;
+  transform-origin:0 0;
+  image-rendering:pixelated;
+  cursor:crosshair
+}
+footer{
+  padding:11px 24px;
+  border-top:1px solid #344157;
+  font-size:13px;
+  min-height:42px
+}
+#status{
+  color:#83e1c2
+}
+.legend{
+  display:flex;
+  gap:16px;
+  font-size:12px
+}
+.legend i{
+  display:inline-block;
+  width:12px;
+  height:12px;
+  border:1px solid #8793a7;
+  margin-right:5px
+}
+.links{
+  display:flex;
+  gap:8px
+}
+.links a{
+  color:#b4cdec
+}
+@media(max-width:700px){
+  aside{
+    width:210px;
+    padding:12px
+  }
+  header{
+    padding:12px
+  }
+  .legend{
+    display:none
+  }
+}

@@ -487,8 +487,14 @@ class _LocalizationBackend:
         if not ok:
             raise RuntimeError(detail)
         run.check()
-        self.grid = localizers.load_grid(self.map_dir)
-        if self.grid is None:
+        from .grid_edits import effective_directory
+        # Pin occupancy inputs for this initialization run. The original map_dir
+        # remains the source of the SLAM graph during handover.
+        self.grid_dir = effective_directory(self.map_dir)
+        self.grid = localizers.load_grid(self.grid_dir)
+        self.tracking_grid = (self.grid if self.grid_dir == self.map_dir
+                              else localizers.load_grid(self.map_dir))
+        if self.grid is None or self.tracking_grid is None:
             raise RuntimeError("saved occupancy grid unavailable")
 
     def match(self, run):
@@ -502,7 +508,7 @@ class _LocalizationBackend:
     def filter(self, run):
         if run.signal.is_set():
             return None, "initial pose supplied"
-        ok, detail = localizers.start(self.map_dir, self.map_id, owns_tf=False, map_topic="/map")
+        ok, detail = localizers.start(self.grid_dir, self.map_id, owns_tf=False, map_topic="/map")
         if not ok:
             return None, f"Particle filter could not start: {detail}"
         try:
@@ -519,7 +525,7 @@ class _LocalizationBackend:
             _LOCALIZATION.filter_running(run)
             timeout = float(os.environ.get("MAPPING_RELOCALIZE_TIMEOUT_S", "180"))
             ok, pose, detail = localizers.wait_for_convergence(
-                self.node, timeout, map_dir=self.map_dir, interrupt_event=run.signal)
+                self.node, timeout, map_dir=self.grid_dir, interrupt_event=run.signal)
             run.check()
             if not ok:
                 return None, detail
@@ -546,7 +552,7 @@ class _LocalizationBackend:
             return False, ready
         if run.cancelled.wait(3.0):
             run.check()
-        ok, verified = _confirm_engine_pose(self.node, self.grid)
+        ok, verified = _confirm_engine_pose(self.node, self.tracking_grid)
         return ok, f"{detail}; {verified}"
 
     def cleanup(self, run, completed):

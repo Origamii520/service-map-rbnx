@@ -11,6 +11,7 @@ sensor inputs by capability contract (never hardcoded topics), and is brought
 up by `rbnx boot`. Consumers (`scene`, `nav`) bind the contracts, not the
 SLAM engine.
 
+- **[Occupancy grid editor](docs/grid-editor.md)**: edit saved grids as reversible deltas; keep the SLAM pose graph unchanged.
 - Capability surface, config schema, and persistence layout: **[CAPABILITY.md](CAPABILITY.md)**.
 - Provider instance configuration reference: **[config.spec](config.spec)**.
 - Offline global-localization benchmark, dataset setup, and results: **[BENCHMARK.md](BENCHMARK.md)**.

@@ -198,7 +198,11 @@ def _ensure_subscriptions() -> None:
                 _latest["localizer_pose_at"] = time.time()
 
             node = Node("mapping_webui")
-            node.create_subscription(OccupancyGrid, MAP_TOPIC, _on_grid, latched)
+            if map_ops.active_algo() == "slam_toolbox":
+                from .grid_relay import Relay
+                node._grid_relay = Relay(node, MAP_TOPIC, MAPS_DIR, lifecycle.current, _on_grid, latched)
+            else:
+                node.create_subscription(OccupancyGrid, MAP_TOPIC, _on_grid, latched)
             node.create_subscription(PoseWithCovarianceStamped, POSE_TOPIC, _on_pose, 10)
             if localizers.enabled():
                 node.create_subscription(PoseWithCovarianceStamped, localizers.POSE_TOPIC,
@@ -743,7 +747,7 @@ def _static(name: str) -> tuple[int, str, bytes]:
     attack and neither deserves a file.
     """
     if name not in {"index.html", "app.js", "style.css",
-                    "vendor/bootstrap.min.css"}:
+                    "vendor/bootstrap.min.css", "editor.html", "editor.js", "editor.css"}:
         return 404, "text/plain", b"not found"
     path = STATIC_DIR / name
     try:
@@ -767,9 +771,61 @@ class _Handler(BaseHTTPRequestHandler):
     def _json(self, obj, code=200):
         self._send(code, "application/json", json.dumps(obj).encode())
 
+    def _editor_store(self):
+        from .grid_edits import Store, map_directory
+        query = parse_qs(urlparse(self.path).query)
+        return Store(map_directory(MAPS_DIR, query.get("map_id", [""])[0]))
+
+    def _editor_get(self, path):
+        from .grid_edits import Conflict
+        try:
+            store = self._editor_store()
+            query = parse_qs(urlparse(self.path).query)
+            revision = query.get("revision", [None])[0]
+            if path == "/api/editor/meta":
+                return self._json(dict(store.metadata(), auto_apply=map_ops.map_engine(str(store.path)) == "slam_toolbox"))
+            for suffix, kind, content_type in (("map.png", "png", "image/png"),
+                    ("export.pgm", "pgm", "image/x-portable-graymap"),
+                    ("export.yaml", "yaml", "application/yaml")):
+                if path == "/api/editor/" + suffix:
+                    return self._send(200, content_type, store.export(kind, revision))
+            return self._json({"ok": False, "detail": "not found"}, 404)
+        except Conflict as exc:
+            return self._json({"ok": False, "detail": str(exc)}, 409)
+        except (ValueError, OSError, KeyError) as exc:
+            return self._json({"ok": False, "detail": str(exc)}, 400)
+
+    def _editor_post(self, path):
+        import base64
+        from .grid_edits import Conflict, MAX_BODY
+        try:
+            # Only same-origin JSON writes: a cross-origin HTML form cannot
+            # change a local map. This is not an authentication boundary.
+            if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
+                raise ValueError("expected application/json")
+            n = int(self.headers.get("Content-Length", 0))
+            if not 0 < n <= MAX_BODY:
+                return self._json({"ok": False, "detail": "invalid request size"}, 413)
+            body = json.loads(self.rfile.read(n))
+            if path not in ("/api/editor/save", "/api/editor/restore"):
+                return self._json({"ok": False, "detail": "not found"}, 404)
+            store = self._editor_store()
+            restore = path.endswith("/restore")
+            png = b"" if restore else base64.b64decode(body["png"].removeprefix("data:image/png;base64,"), validate=True)
+            out = store.save(png, body["version"], body["base_sha256"], restore=restore)
+            return self._json(out)
+        except Conflict as exc:
+            return self._json({"ok": False, "detail": str(exc)}, 409)
+        except (ValueError, OSError, KeyError, TypeError) as exc:
+            return self._json({"ok": False, "detail": str(exc)}, 400)
+
     def do_GET(self):
         p = urlparse(self.path).path
         try:
+            if p == "/editor":
+                return self._send(*_static("editor.html"))
+            if p.startswith("/api/editor/"):
+                return self._editor_get(p)
             if p == "/" or p == "/index.html":
                 return self._send(*_static("index.html"))
             if p.startswith("/static/"):
@@ -801,6 +857,9 @@ class _Handler(BaseHTTPRequestHandler):
                       "trust": _localization_trust(),
                       "map_id": live.get("map_id", ""),
                       "generation": live.get("generation", 0)}
+                relay = getattr(_webui_node, "_grid_relay", None)
+                if relay is not None:
+                    st["navigation_grid"] = dict(relay.status)
                 if g is not None:
                     st.update(width=g.info.width, height=g.info.height,
                               resolution=round(g.info.resolution, 4),
@@ -840,6 +899,10 @@ class _Handler(BaseHTTPRequestHandler):
             if p.startswith("/api/maps/") and p.endswith("/preview.png"):
                 mid = p[len("/api/maps/"):-len("/preview.png")]
                 fp = os.path.join(MAPS_DIR, map_ops._sanitize_map_id(mid), "occupancy.png")
+                if os.path.isfile(os.path.join(os.path.dirname(fp), ".grid-edits", "active")):
+                    from .grid_edits import Store, map_directory
+                    store = Store(map_directory(MAPS_DIR, mid))
+                    return self._send(200, "image/png", store.export("png"))
                 if os.path.isfile(fp):
                     return self._send(200, "image/png", open(fp, "rb").read())
                 return self._send(404, "text/plain", b"no preview")
@@ -851,6 +914,8 @@ class _Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         p = urlparse(self.path).path
         try:
+            if p.startswith("/api/editor/"):
+                return self._editor_post(p)
             n = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(n) or b"{}")
             if p == "/api/save":

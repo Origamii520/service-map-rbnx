@@ -1,0 +1,84 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: MulanPSL-2.0 -->
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Robonix 栅格地图编辑</title>
+<link rel="stylesheet" href="/static/editor.css">
+<header>
+<div>
+<h1>Robonix 栅格地图编辑</h1>
+<small id="mapname">正在载入已保存地图…</small>
+</div>
+<div class="legend">
+<span>
+<i id="legend-wall" style="background:#000">
+</i>障碍</span>
+<span>
+<i id="legend-free" style="background:#fff">
+</i>可通行</span>
+<span>
+<i id="legend-unknown" style="background:#cdcdcd">
+</i>未知</span>
+</div>
+<a class="action" href="/" target="_blank">查看定位 ↗</a>
+</header>
+<main>
+<aside>
+<div class="edit-scroll">
+<section>
+<h2>编辑工具</h2>
+<div class="tools" id="tools">
+<button data-tool="wall" class="active">画障碍</button>
+<button data-tool="free">擦为可通行</button>
+<button data-tool="line">直线补墙</button>
+<button data-tool="rect">封闭区域</button>
+<button data-tool="unknown">标为未知</button>
+<button data-tool="pan">浏览 / 拖动</button>
+</div>
+</section>
+<section>
+<h2>笔刷 / 墙宽 <span id="widthlabel">0.20 m</span>
+</h2>
+<input id="width" aria-label="笔刷宽度" type="range" min="0.05" max="1.0" step="0.05" value="0.20">
+</section>
+<div class="row">
+<button id="undo">撤销</button>
+<button id="redo">重做</button>
+</div>
+<div class="row">
+<button id="fit">适应窗口</button>
+<button id="revert">丢弃未保存修改</button>
+</div>
+<div class="note">
+<p>滚轮缩放；按住空格拖动地图。直线补墙和封闭区域：按下后拖动，再松开。</p>
+</div>
+<div class="note">
+<p id="usage">编辑栅格用于导航和下一次初始定位。擦除静态障碍后，实时激光仍会检测现场障碍。原图和位姿图保留；保存不会启动机器人或重新定位。</p>
+</div>
+
+</div>
+<div class="edit-actions">
+<p class="muted" id="version">
+</p>
+<button id="save" class="primary">保存并应用栅格</button>
+<button id="restore">恢复原始栅格</button>
+<div class="links">
+<a id="export-pgm" href="#" download="occupancy.pgm">导出 PGM</a>
+<a id="export-yaml" href="#" download="occupancy.yaml">导出 YAML</a>
+</div>
+</div>
+</aside>
+<div id="viewport">
+<canvas id="map" aria-label="可编辑导航地图">
+</canvas>
+</div>
+</main>
+<footer>
+<span id="status">载入地图中…</span>
+<span id="coords" style="float:right">
+</span>
+</footer>
+<script src="/static/editor.js">
+</script>
+</html>

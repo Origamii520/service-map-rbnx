@@ -473,7 +473,8 @@ async function poll() {
                 s.pose.theta.toFixed(2) +
                 ")"
               : "—") +
-            (s.dist_from_seed != null ? "  Δseed=" + s.dist_from_seed + "m" : "")
+            (s.dist_from_seed != null ? "  Δseed=" + s.dist_from_seed + "m" : "") +
+            (s.navigation_grid ? " · grid " + (s.navigation_grid.error || s.navigation_grid.revision) : "")
         : "no map yet",
     );
     if (STALE) {
@@ -505,6 +506,13 @@ async function loadLib() {
    <div class="mi"><b title="${x.map_id}">${x.map_id}</b><div title="${x.detail || ""}">${(x.db_size / 1e6).toFixed(1)} MB · ${x.engine || "?"}${x.has_db ? "" : " · no map data"}${x.loadable_here ? "" : " · other backend"}</div></div>
    <div class="acts"><button class="btn sm"${x.loadable_here ? "" : ` disabled title="${x.detail || "cannot be loaded here"}"`} onclick="doLoad('${x.map_id}')">Load</button>
    <button class="btn sm danger" onclick="doDelete('${x.map_id}')">Del</button></div>`;
+    if (x.has_preview) {
+      const edit = document.createElement("a");
+      edit.className = "btn sm";
+      edit.href = "/editor?map_id=" + encodeURIComponent(x.map_id);
+      edit.textContent = "Edit grid";
+      d.querySelector(".acts").appendChild(edit);
+    }
     el.appendChild(d);
   }
 }

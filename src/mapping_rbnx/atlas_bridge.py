@@ -550,6 +550,9 @@ def _declare_outputs(cap: Service, algo: str, resolved: dict[str, str]) -> None:
             )
             continue
         topic = bindings[contract_id]
+        if algo == "slam_toolbox" and contract_id == "robonix/service/map/occupancy_grid":
+            from mapping_rbnx.grid_relay import TOPIC
+            topic = TOPIC
         try:
             output_qos = (
                 "transient_local"

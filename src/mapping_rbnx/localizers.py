@@ -329,7 +329,8 @@ def load_grid(map_dir: str):
     pgm_path = os.path.join(map_dir, "occupancy.pgm")
     try:
         import yaml as _yaml
-        meta = _yaml.safe_load(open(yaml_path, encoding="utf-8"))
+        with open(yaml_path, encoding="utf-8") as stream:
+            meta = _yaml.safe_load(stream)
         resolution = float(meta["resolution"])
         origin = (float(meta["origin"][0]), float(meta["origin"][1]))
         occupied_thresh = float(meta.get("occupied_thresh", 0.65))
@@ -357,7 +358,7 @@ def load_grid(map_dir: str):
         if p_occ >= occupied_thresh:
             occupied[i] = 1
             known[i] = 1
-        elif p_occ <= free_thresh and v >= maxval - 5:
+        elif p_occ <= free_thresh:
             known[i] = 1
     # The PGM's first row is the top of the map; the grid's first row is the
     # bottom, so the rows are flipped once here rather than on every lookup.
