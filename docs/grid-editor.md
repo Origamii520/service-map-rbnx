@@ -12,6 +12,28 @@ creates an empty delta against the original while retaining previous revisions.
 An outdated browser receives a conflict rather than overwriting newer work;
 its unsaved drawing remains visible until the operator reloads or discards it.
 
+## Deploying through Console
+
+The editor is built into this map service, not a separate Skill or deployment.
+A mapping or localization/navigation deployment that includes a version of this
+package with the editor also includes its UI assets and save/export endpoints.
+A navigation-only deployment without this map service does not include them.
+
+In Console, update the mapping package reference in the existing deployment to
+the desired package version, build it, and save a new deployment version before
+starting it. Keep the previous version for rollback. Leave `webui_port: 8091`
+enabled and select the map storage directory for that machine. The editor uses
+the same saved map directory as the service; no private Go2 paths are needed.
+Package availability in Hub depends on its published source/version: an older
+installed package does not gain this feature merely by saving a Console config.
+
+The normal workflow is **build a map → save it → Maps → Edit grid → save edits →
+load the saved map for localization/navigation**. Editing a saved map does not
+rewrite the active SLAM graph or live mapping output. During saved-map
+localization, the selected saved edits feed the occupancy output described
+below. If navigation or Scene has an explicit topic override, update it too.
+There is no need to add a standalone editor process or a second editor port.
+
 ## What each consumer uses
 
 Automatic application is integrated with the **slam_toolbox** backend:
