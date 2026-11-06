@@ -28,6 +28,53 @@ def png(pixels):
     return buf.getvalue()
 
 
+class LimitsTests(unittest.TestCase):
+    def setUp(self):
+        from mapping_rbnx import grid_edits
+        self.edits = grid_edits
+        grid_edits.configure({})
+        self.addCleanup(grid_edits.configure, {})
+
+    def test_defaults_override_and_reset(self):
+        self.assertEqual(self.edits.limits(), (16_000_000, 24_000_000))
+        self.edits.configure({'editor_max_pixels': 6, 'editor_max_body_bytes': 300})
+        self.assertEqual(self.edits.limits(), (6, 300))
+        self.edits.configure({'editor_max_pixels': 12})
+        self.assertEqual(self.edits.limits(), (12, 24_000_000))
+        self.edits.configure({})
+        self.assertEqual(self.edits.limits(), (16_000_000, 24_000_000))
+
+    def test_invalid_config_is_rejected_without_partial_update(self):
+        for key in ('editor_max_pixels', 'editor_max_body_bytes'):
+            for value in (0, -1, 1.5, True, '100', None):
+                with self.subTest(key=key, value=value):
+                    with self.assertRaisesRegex(ValueError, key):
+                        self.edits.configure({key: value})
+                    self.assertEqual(self.edits.limits(), (16_000_000, 24_000_000))
+        with self.assertRaises(ValueError):
+            self.edits.configure({'editor_max_pixels': 10, 'editor_max_body_bytes': 0})
+        self.assertEqual(self.edits.limits(), (16_000_000, 24_000_000))
+
+    def test_pixel_boundary_rejects_before_decode_and_can_be_raised(self):
+        payload = png(np.zeros((2, 3), dtype=np.uint8))
+        self.edits.configure({'editor_max_pixels': 5})
+        with patch.object(Image.Image, 'convert', side_effect=AssertionError('decoded too early')):
+            with self.assertRaisesRegex(ValueError, 'pixel limit'):
+                self.edits._image(payload)
+        self.edits.configure({'editor_max_pixels': 6})
+        self.assertEqual(self.edits._image(payload).shape, (2, 3))
+
+    def test_manifest_init_applies_limits_before_other_setup(self):
+        from mapping_rbnx import atlas_bridge
+        with patch.object(atlas_bridge, '_check_binding_complete', side_effect=RuntimeError('fixture stop')):
+            atlas_bridge.init({'editor_max_pixels': 10, 'editor_max_body_bytes': 500})
+        self.assertEqual(self.edits.limits(), (10, 500))
+        with patch.object(atlas_bridge, '_check_binding_complete') as check:
+            result = atlas_bridge.init({'editor_max_pixels': 0})
+            self.assertIsInstance(result, atlas_bridge.Err)
+            check.assert_not_called()
+
+
 class EditsTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -199,6 +246,13 @@ class HttpTests(unittest.TestCase):
                 meta = json.load(urlopen(base+'/api/editor/meta?map_id=lab'))
                 body = dict(png=base64.b64encode(png(self.base)).decode(),version=meta['version'],base_sha256=meta['base_sha256'])
                 request = Request(base+'/api/editor/save?map_id=lab',data=json.dumps(body).encode(),headers={'Content-Type':'application/json'})
+                from mapping_rbnx import grid_edits
+                self.addCleanup(grid_edits.configure, {})
+                grid_edits.configure({'editor_max_body_bytes': len(request.data) - 1})
+                with self.assertRaises(HTTPError) as exc: urlopen(request)
+                self.assertEqual(exc.exception.code,413)
+                self.assertEqual(self.store.revision(), 'original')
+                grid_edits.configure({'editor_max_body_bytes': len(request.data)})
                 response = json.load(urlopen(request)); self.assertTrue(response['ok'])
                 with self.assertRaises(HTTPError) as exc: urlopen(request)
                 self.assertEqual(exc.exception.code,409)

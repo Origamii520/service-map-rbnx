@@ -797,14 +797,14 @@ class _Handler(BaseHTTPRequestHandler):
 
     def _editor_post(self, path):
         import base64
-        from .grid_edits import Conflict, MAX_BODY
+        from .grid_edits import Conflict, limits
         try:
             # Only same-origin JSON writes: a cross-origin HTML form cannot
             # change a local map. This is not an authentication boundary.
             if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
                 raise ValueError("expected application/json")
             n = int(self.headers.get("Content-Length", 0))
-            if not 0 < n <= MAX_BODY:
+            if not 0 < n <= limits()[1]:
                 return self._json({"ok": False, "detail": "invalid request size"}, 413)
             body = json.loads(self.rfile.read(n))
             if path not in ("/api/editor/save", "/api/editor/restore"):

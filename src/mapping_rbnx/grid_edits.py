@@ -24,6 +24,26 @@ import yaml
 
 MAX_PIXELS = 16_000_000
 MAX_BODY = 24_000_000
+_limits = (MAX_PIXELS, MAX_BODY)
+
+
+def configure(cfg):
+    """Apply one deployment's editor limits; absent keys restore defaults."""
+    values = []
+    for key, default in (('editor_max_pixels', MAX_PIXELS),
+                         ('editor_max_body_bytes', MAX_BODY)):
+        value = cfg.get(key, default)
+        if type(value) is not int or value <= 0:
+            raise ValueError(f'{key} must be a positive integer')
+        values.append(value)
+    # Validate both before replacing the active settings.
+    global _limits
+    _limits = tuple(values)
+
+
+def limits():
+    """Return (decoded image pixels, complete JSON request body bytes)."""
+    return _limits
 
 
 class Conflict(ValueError):
@@ -50,7 +70,7 @@ def map_directory(root, map_id):
 
 def _image(data):
     with Image.open(io.BytesIO(data)) as im:
-        if im.width * im.height > MAX_PIXELS:
+        if im.width * im.height > limits()[0]:
             raise ValueError('map exceeds editor pixel limit')
         if im.mode != 'L':
             # Browser canvas exports opaque RGBA. Do not silently flatten masks.

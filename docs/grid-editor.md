@@ -90,8 +90,8 @@ This editor preserves dimensions, resolution and origin (including yaw), and
 supports opaque trinary grayscale maps with either negate value. The existing
 coarse/fine global matcher assumes axis-aligned grids; this PR does not add
 rotated-grid localization. Export/ROS publishing preserve the saved yaw.
-Images are limited to 16 million cells and JSON uploads to 24 MB. No new Python
-dependency is needed beyond the existing Pillow, NumPy and PyYAML runtime.
+No new Python dependency is needed beyond the existing Pillow, NumPy and
+PyYAML runtime.
 
 Removing a false obstacle can reopen a route. It cannot repair a warped pose
 graph, odometry drift, wrong extrinsics or real obstacles detected by the live
@@ -103,3 +103,47 @@ revision conflicts, concurrent saves, failed activation, base changes, negate,
 export geometry, HTTP routes, initial-map pinning and graph handover. The relay
 can be exercised on an isolated localhost ROS domain using synthetic occupancy
 messages; no chassis or navigation commands are required.
+
+
+## Deployment size limits
+
+Configure these positive integers in the mapping service's deployment `config`
+block. Omitting them keeps the existing defaults; zero, negative, fractional,
+boolean and string values are rejected at initialization.
+
+```yaml
+service:
+  - name: mapping
+    url: https://github.com/syswonder/service-map-rbnx
+    config:
+      algo: slam_toolbox
+      sensor_providers: {scan_converter: pcld2lscan}
+      editor_max_pixels: 16000000
+      editor_max_body_bytes: 24000000
+```
+
+| Setting | Default | Unit and scope |
+|---|---:|---|
+| `editor_max_pixels` | 16,000,000 | Decoded width × height in pixels/cells; checked before image decoding, for original and uploaded images and edited-cache validation. |
+| `editor_max_body_bytes` | 24,000,000 | Bytes of the complete save/restore JSON body, including base64 PNG, revision and base hash; excludes HTTP headers. Oversized requests receive HTTP 413 before reading the body. |
+
+The upload must fit **both** limits. Pixels are not bytes: PNG size depends on
+compression, image content and color mode. If the PNG contains `B` bytes, its
+base64 field needs `4 × ceil(B / 3)` bytes, plus the data-URL prefix (if present)
+and the other JSON fields. Size `editor_max_body_bytes` for that complete body,
+with margin. There is no fixed body-to-pixel ratio: a larger pixel allowance
+alone does not guarantee that every image of that size can be uploaded.
+The default body allowance is 24 decimal MB (about 22.9 MiB).
+
+For example, a deployment allowing 32,000,000 pixels can choose a 192,000,000-byte
+body budget when its available memory and expected PNGs justify it. This is a
+configuration example, not a memory reservation or a promise that processing
+uses only that much RAM. Decoding, RGBA validation, NumPy arrays, base64/JSON and
+sparse edits can coexist in memory; allow additional RAM. Pillow's own image
+safety checks also remain active. Configure limits before loading a large map;
+reducing the pixel limit below a saved map's dimensions makes that map unreadable
+through the editor/edited-grid path until the allowance is raised again.
+
+The standalone import script is not a running deployment and retains the
+16,000,000-pixel default. The HTTP body limit does not apply to its local file
+input.

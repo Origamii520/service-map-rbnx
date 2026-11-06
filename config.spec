@@ -314,6 +314,28 @@ properties:
         description: >-
           Radius in metres searched for a loop closure. Must be greater than 0.
 
+  editor_max_pixels:
+    type: integer
+    x-group: Web UI
+    default: 16000000
+    minimum: 1
+    description: >-
+      Maximum decoded image width times height, in pixels (occupancy cells),
+      for the grid editor and saved edit loading. This is not a byte limit.
+      Increase editor_max_body_bytes as needed for the base64 PNG plus JSON;
+      PNG compression varies, so pixel count alone does not determine upload size.
+
+  editor_max_body_bytes:
+    type: integer
+    x-group: Web UI
+    default: 24000000
+    minimum: 1
+    description: >-
+      Maximum complete editor save/restore JSON request body in bytes, including
+      base64 PNG and metadata, excluding HTTP headers. Base64 uses 4 times
+      ceil(PNG bytes / 3), plus JSON overhead. Independent of editor_max_pixels;
+      both limits must accommodate a save. Defaults use decimal bytes, not MiB.
+
   webui_port:
     type: [integer, string]
     x-group: Web UI

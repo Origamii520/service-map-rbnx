@@ -606,6 +606,12 @@ def init(cfg: dict):
       4. Write /tmp/<algo>_resolved.yaml for the launch file.
       5. DeclareInterface(ROS2) for every exported map output.
     """
+    from . import grid_edits
+    try:
+        grid_edits.configure(cfg)
+    except ValueError as e:
+        return Err(str(e))
+
     algo = cfg.get("algo", "rtabmap")
     if algo not in _ALGO_TOPIC_BINDINGS:
         return Err(
